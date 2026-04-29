@@ -1,0 +1,8 @@
+.DS_Store
+.vscode/
+.idea/
+*.log
+node_modules/
+
+# Sample PDFs — don't commit real supplier docs
+*.pdf

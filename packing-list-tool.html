@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Packing List → SPS Slab Info</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e3e6eb;
+    --text: #1a1f2e;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --warn-bg: #fff7ed;
+    --warn-border: #fdba74;
+    --warn-text: #9a3412;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px 0; }
+  .sub { color: var(--muted); margin-bottom: 20px; font-size: 13px; }
+  .controls {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+  label { font-size: 13px; font-weight: 600; }
+  select, input[type=file] {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+  }
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px;
+    text-align: center;
+    background: var(--card);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 16px;
+  }
+  .drop-zone.drag { border-color: var(--accent); background: #eff6ff; }
+  .drop-zone .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .banner {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    color: var(--warn-text);
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .meta {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .meta div span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .meta div strong { font-size: 15px; }
+  .bundle {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .bundle-head {
+    padding: 12px 16px;
+    background: #f9fafb;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .bundle-head h3 { margin: 0; font-size: 15px; }
+  .bundle-head .stats { color: var(--muted); font-size: 13px; }
+  .bundle-head .stats strong { color: var(--text); }
+  button.copy {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  button.copy:hover { background: var(--accent-hover); }
+  button.copy.copied { background: var(--ok); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    padding: 6px 12px;
+    text-align: left;
+    border-bottom: 1px solid #f0f1f4;
+  }
+  th { background: #fafbfc; font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .anomaly {
+    margin: 0;
+    padding: 10px 16px;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    font-size: 12px;
+    border-top: 1px solid var(--warn-border);
+  }
+  .anomaly strong { font-weight: 700; }
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 40px;
+  }
+</style>
+</head>
+<body>
+<h1>Packing List → SPS Slab Info</h1>
+<div class="sub">Reads supplier packing slip PDF and generates copy-paste blocks for the SPS Packinglist Details popup.</div>
+
+<div class="controls">
+  <label>Supplier:
+    <select id="supplier">
+      <option value="milanezi">Milanezi Granitos</option>
+    </select>
+  </label>
+  <label>Decimal:
+    <select id="decimal">
+      <option value=".">period (US — 2.70)</option>
+      <option value=",">comma (BR — 2,70)</option>
+    </select>
+  </label>
+</div>
+
+<div class="drop-zone" id="drop">
+  <div><strong>Drop PDF here</strong> or click to upload</div>
+  <div class="hint">Packing slip from the supplier — local processing, nothing uploaded anywhere.</div>
+  <input type="file" id="file" accept="application/pdf" hidden>
+</div>
+
+<div id="output"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+const output = document.getElementById('output');
+const supplierSelect = document.getElementById('supplier');
+const decimalSelect = document.getElementById('decimal');
+
+let lastResult = null;
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+decimalSelect.addEventListener('change', () => { if (lastResult) render(lastResult); });
+
+async function handleFile(file) {
+  output.innerHTML = '<div class="empty">Reading PDF…</div>';
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    lines.push(...groupLines(tc.items));
+  }
+  const supplier = supplierSelect.value;
+  const parser = PARSERS[supplier];
+  if (!parser) {
+    output.innerHTML = `<div class="empty">No parser for "${supplier}".</div>`;
+    return;
+  }
+  try {
+    const result = parser(lines);
+    lastResult = result;
+    render(result);
+  } catch (err) {
+    output.innerHTML = `<div class="empty">Parse error: ${err.message}</div>`;
+    console.error(err);
+  }
+}
+
+// Group PDF text items into lines by y-position
+function groupLines(items) {
+  const rows = {};
+  for (const it of items) {
+    const y = Math.round(it.transform[5]);
+    // bucket by y within 2px tolerance
+    let key = null;
+    for (const k of Object.keys(rows)) {
+      if (Math.abs(parseInt(k) - y) <= 2) { key = k; break; }
+    }
+    if (key === null) key = String(y);
+    if (!rows[key]) rows[key] = [];
+    rows[key].push({ x: it.transform[4], text: it.str });
+  }
+  return Object.keys(rows)
+    .map(k => ({ y: parseInt(k), items: rows[k].sort((a, b) => a.x - b.x) }))
+    .sort((a, b) => b.y - a.y) // top to bottom
+    .map(r => r.items.map(i => i.text).join(' ').replace(/\s+/g, ' ').trim())
+    .filter(s => s.length > 0);
+}
+
+// ============================================================================
+// PARSERS — one function per supplier
+// ============================================================================
+
+const PARSERS = {
+  milanezi: parseMilanezi,
+};
+
+function parseMilanezi(lines) {
+  const result = {
+    supplier: 'Milanezi Granitos',
+    packingNr: null,
+    container: null,
+    poNumber: null,
+    unit: 'm',
+    bundles: [],
+  };
+
+  // Header extraction
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    const mPL = ln.match(/PACKING LIST\s+Nr\.?\s*([\d/]+)/i);
+    if (mPL) result.packingNr = mPL[1];
+    // ORDER NR. on one line, value on next or same
+    if (/ORDER NR\.?/i.test(ln)) {
+      // Try same line
+      const same = ln.match(/ORDER NR\.?\s*[:\s]\s*(\d+)/i);
+      if (same) result.poNumber = same[1];
+      else {
+        // Look ahead a few lines for a standalone number
+        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+          const m = lines[j].match(/^\s*(\d{4,})\s*$/);
+          if (m) { result.poNumber = m[1]; break; }
+          // Sometimes container + PO on same line: "MSMU 254.878-8 21124"
+          const combo = lines[j].match(/([A-Z]{4}\s*[\d.\-]+)\s+(\d{4,})/);
+          if (combo) {
+            result.container = combo[1].replace(/\s+/g, ' ').trim();
+            result.poNumber = combo[2];
+            break;
+          }
+        }
+      }
+    }
+    if (!result.container) {
+      const mC = ln.match(/\b([A-Z]{4}\s*\d[\d.\-\s]*\d)\b/);
+      if (mC && /CONTAINER/i.test(lines[Math.max(0, i - 1)] + ' ' + ln)) {
+        result.container = mC[1].replace(/\s+/g, ' ').trim();
+      }
+    }
+  }
+
+  // Bundle extraction
+  let current = null;
+  for (const ln of lines) {
+    const mB = ln.match(/^BUNDLE\s+(\d+)/i);
+    if (mB) {
+      if (current) result.bundles.push(current);
+      current = { number: mB[1], slabs: [], material: null, totalSqm: 0 };
+      continue;
+    }
+    if (!current) continue;
+
+    // Slab row: starts with QTY (1), then BLOCK (digits or "-"), then SLAB (digits)
+    // Then literal "SLABS A POLISHED" (or other finish), then material, then L H SQM (commas)
+    const row = parseSlabRow(ln);
+    if (row) {
+      current.slabs.push(row);
+      if (!current.material) current.material = row.material;
+    } else {
+      // Totals row: just an integer and a number with comma — end of bundle table
+      const mTot = ln.match(/^(\d+)\s+([\d,]+)\s*$/);
+      if (mTot && current.slabs.length > 0) {
+        current.totalSqm = parseFloat(mTot[2].replace(',', '.'));
+        // Don't push yet — next BUNDLE header will push, or end of loop
+      }
+    }
+  }
+  if (current) result.bundles.push(current);
+
+  return result;
+}
+
+function parseSlabRow(line) {
+  // Example variants:
+  //  "1 12499 02 SLABS A POLISHED GEILO 2CM 2,70 1,60 4,32"
+  //  "1 - 02 SLABS A POLISHED GEILO MOSAIC DIAMONDS 2CM 3,33 1,91 6,36"
+  // Must contain "SLABS" and end with three comma-decimals.
+  const tokens = line.split(/\s+/);
+  if (tokens.length < 9) return null;
+  if (!/^\d+$/.test(tokens[0])) return null;
+
+  // Last 3 tokens must be numbers with comma
+  const num = /^[\d.,]+$/;
+  if (!num.test(tokens[tokens.length - 1])) return null;
+  if (!num.test(tokens[tokens.length - 2])) return null;
+  if (!num.test(tokens[tokens.length - 3])) return null;
+
+  const qty = tokens[0];
+  const block = tokens[1] === '-' ? null : tokens[1];
+  const slab = tokens[2];
+
+  // tokens[3] should be SLABS (or similar TYPE word)
+  if (!/^SLABS?$/i.test(tokens[3])) return null;
+
+  // Find the start of MATERIAL: after CFY (1 token) and FINISH (1 token)
+  // tokens[4] = CFY (A/B/C), tokens[5] = FINISH (POLISHED/HONED/etc)
+  const materialTokens = tokens.slice(6, tokens.length - 3);
+  const material = materialTokens.join(' ');
+
+  const l = parseFloat(tokens[tokens.length - 3].replace(',', '.'));
+  const h = parseFloat(tokens[tokens.length - 2].replace(',', '.'));
+  const sqm = parseFloat(tokens[tokens.length - 1].replace(',', '.'));
+
+  return { qty: parseInt(qty), block, slab, material, l, h, sqm };
+}
+
+// ============================================================================
+// RENDER
+// ============================================================================
+
+function render(result) {
+  const dec = decimalSelect.value;
+  const fmt = n => dec === ',' ? String(n).replace('.', ',') : String(n);
+
+  let html = `
+    <div class="banner">⚠ Before pasting in SPS popup: select unit "${result.unit}" (${result.unit === 'm' ? 'meters' : result.unit}). Otherwise sizes will be wrong.</div>
+    <div class="meta">
+      <div><span>Supplier</span><strong>${result.supplier}</strong></div>
+      <div><span>Packing List</span><strong>${result.packingNr || '—'}</strong></div>
+      <div><span>Container</span><strong>${result.container || '—'}</strong></div>
+      <div><span>PO Number</span><strong>${result.poNumber || '—'}</strong></div>
+    </div>
+  `;
+
+  if (result.bundles.length === 0) {
+    html += '<div class="empty">No bundles found in this PDF.</div>';
+    output.innerHTML = html;
+    return;
+  }
+
+  for (const b of result.bundles) {
+    const blockForRef = b.slabs[0]?.block || result.poNumber || '';
+    // Build TSV
+    const tsvLines = b.slabs.map(s => {
+      const block = s.block || result.poNumber || '';
+      const ref = `${block}-${s.slab}`;
+      return [
+        fmt(s.l),
+        fmt(s.h),
+        s.qty,
+        block,
+        b.number,
+        ref,
+      ].join('\t');
+    });
+    const tsv = tsvLines.join('\n');
+
+    // Anomaly checks
+    const anomalies = [];
+    const slabSeen = {};
+    for (const s of b.slabs) {
+      const key = `${s.block || '-'}-${s.slab}`;
+      slabSeen[key] = (slabSeen[key] || 0) + 1;
+    }
+    const dupes = Object.entries(slabSeen).filter(([_, n]) => n > 1).map(([k]) => k);
+    if (dupes.length) anomalies.push(`Duplicate slab references: ${dupes.join(', ')}`);
+
+    for (const s of b.slabs) {
+      const calc = +(s.l * s.h).toFixed(2);
+      const reported = s.sqm;
+      if (Math.abs(calc - reported) > 0.05) {
+        anomalies.push(`Slab ${s.slab}: ${s.l} × ${s.h} = ${calc} but PDF says ${reported}`);
+      }
+    }
+
+    // Slab number gaps (skipped numbers)
+    const nums = b.slabs.map(s => parseInt(s.slab, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+    if (nums.length > 1) {
+      const gaps = [];
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i] - nums[i - 1] > 1) gaps.push(`${nums[i - 1]} → ${nums[i]}`);
+      }
+      if (gaps.length) anomalies.push(`Skipped slab numbers: ${gaps.join(', ')}`);
+    }
+
+    const tsvId = 'tsv_' + b.number;
+    html += `
+      <div class="bundle">
+        <div class="bundle-head">
+          <div>
+            <h3>BUNDLE ${b.number}</h3>
+            <div class="stats">
+              <strong>${b.material || '—'}</strong> ·
+              ${b.slabs.length} slabs ·
+              total ${fmt(+b.slabs.reduce((s, x) => s + x.sqm, 0).toFixed(2))} SQM
+              ${b.totalSqm ? `(PDF: ${fmt(b.totalSqm)})` : ''}
+            </div>
+          </div>
+          <button class="copy" data-target="${tsvId}">Copy TSV</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>Length</th><th>Width</th><th>Qty</th>
+            <th>Block</th><th>Bundle</th><th>Supplier Reference</th>
+          </tr></thead>
+          <tbody>
+            ${b.slabs.map(s => {
+              const block = s.block || result.poNumber || '';
+              return `<tr>
+                <td class="num">${fmt(s.l)}</td>
+                <td class="num">${fmt(s.h)}</td>
+                <td class="num">${s.qty}</td>
+                <td>${block}</td>
+                <td>${b.number}</td>
+                <td>${block}-${s.slab}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        ${anomalies.length ? `<div class="anomaly"><strong>Heads up:</strong> ${anomalies.join(' · ')}</div>` : ''}
+        <textarea id="${tsvId}" style="display:none">${tsv}</textarea>
+      </div>
+    `;
+  }
+
+  output.innerHTML = html;
+
+  // Wire copy buttons
+  document.querySelectorAll('button.copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ta = document.getElementById(btn.dataset.target);
+      navigator.clipboard.writeText(ta.value).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  });
+}
+</script>
+</body>
+</html>
