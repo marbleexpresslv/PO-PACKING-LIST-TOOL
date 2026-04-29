@@ -6,7 +6,7 @@ generates copy-paste blocks for the SPS **Packinglist Details** popup
 
 ## How to use
 
-1. Open `packing-list-tool.html` in a browser (or visit the published URL).
+1. Open `index.html` in a browser (or visit the published URL).
 2. Pick the supplier from the dropdown.
 3. Drop the packing-slip PDF in the drop zone.
 4. The tool shows each bundle with a **Copy TSV** button.
@@ -21,7 +21,7 @@ generates copy-paste blocks for the SPS **Packinglist Details** popup
 - **Milanezi Granitos** — unit: meters · block "—" replaced with PO number
 
 More suppliers are added by writing a parser in the `PARSERS` object inside
-`packing-list-tool.html`.
+`index.html`.
 
 ## Field mapping
 
