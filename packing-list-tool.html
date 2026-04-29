@@ -259,37 +259,31 @@ function parseMilanezi(lines) {
     bundles: [],
   };
 
-  // Header extraction
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
+  // Packing list number
+  for (const ln of lines) {
     const mPL = ln.match(/PACKING LIST\s+Nr\.?\s*([\d/]+)/i);
-    if (mPL) result.packingNr = mPL[1];
-    // ORDER NR. on one line, value on next or same
-    if (/ORDER NR\.?/i.test(ln)) {
-      // Try same line
-      const same = ln.match(/ORDER NR\.?\s*[:\s]\s*(\d+)/i);
-      if (same) result.poNumber = same[1];
-      else {
-        // Look ahead a few lines for a standalone number
-        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-          const m = lines[j].match(/^\s*(\d{4,})\s*$/);
-          if (m) { result.poNumber = m[1]; break; }
-          // Sometimes container + PO on same line: "MSMU 254.878-8 21124"
-          const combo = lines[j].match(/([A-Z]{4}\s*[\d.\-]+)\s+(\d{4,})/);
-          if (combo) {
-            result.container = combo[1].replace(/\s+/g, ' ').trim();
-            result.poNumber = combo[2];
-            break;
-          }
-        }
-      }
-    }
+    if (mPL) { result.packingNr = mPL[1]; break; }
+  }
+
+  // PO + container: scan from "ORDER NR." header until first "BUNDLE" line.
+  // Container matches MSMU-style codes; PO is a standalone 4-6 digit token.
+  const firstBundleIdx = lines.findIndex(l => /^BUNDLE\s+\d+/i.test(l));
+  const stopIdx = firstBundleIdx > 0 ? firstBundleIdx : lines.length;
+  const orderIdx = lines.findIndex(l => /ORDER NR\.?/i.test(l));
+  const scanStart = orderIdx >= 0 ? orderIdx : 0;
+
+  for (let i = scanStart; i < stopIdx; i++) {
+    const ln = lines[i];
     if (!result.container) {
-      const mC = ln.match(/\b([A-Z]{4}\s*\d[\d.\-\s]*\d)\b/);
-      if (mC && /CONTAINER/i.test(lines[Math.max(0, i - 1)] + ' ' + ln)) {
-        result.container = mC[1].replace(/\s+/g, ' ').trim();
-      }
+      const cm = ln.match(/\b([A-Z]{4}\s?\d{3}\.\d{3}-\d)\b/) || ln.match(/\b([A-Z]{4}\d{7,})\b/);
+      if (cm) result.container = cm[1].replace(/\s+/g, ' ').trim();
     }
+    if (!result.poNumber) {
+      const tokens = ln.split(/\s+/);
+      const po = tokens.find(t => /^\d{4,6}$/.test(t));
+      if (po) result.poNumber = po;
+    }
+    if (result.container && result.poNumber) break;
   }
 
   // Bundle extraction
@@ -371,7 +365,10 @@ function render(result) {
       <div><span>Supplier</span><strong>${result.supplier}</strong></div>
       <div><span>Packing List</span><strong>${result.packingNr || '—'}</strong></div>
       <div><span>Container</span><strong>${result.container || '—'}</strong></div>
-      <div><span>PO Number</span><strong>${result.poNumber || '—'}</strong></div>
+      <div><span>PO Number ${result.poNumber ? '' : '<em style="color:#9a3412">(not detected — fill in)</em>'}</span>
+        <input id="po-override" value="${result.poNumber || ''}" placeholder="e.g. 21124"
+          style="width:100%;font-size:15px;font-weight:700;border:1px solid var(--border);border-radius:4px;padding:4px 6px;margin-top:2px;">
+      </div>
     </div>
   `;
 
@@ -467,6 +464,21 @@ function render(result) {
   }
 
   output.innerHTML = html;
+
+  // Wire PO override — re-render when user changes it
+  const poInput = document.getElementById('po-override');
+  if (poInput) {
+    poInput.addEventListener('input', () => {
+      lastResult.poNumber = poInput.value.trim();
+      const caretPos = poInput.selectionStart;
+      render(lastResult);
+      const newInput = document.getElementById('po-override');
+      if (newInput) {
+        newInput.focus();
+        newInput.setSelectionRange(caretPos, caretPos);
+      }
+    });
+  }
 
   // Wire copy buttons
   document.querySelectorAll('button.copy').forEach(btn => {
