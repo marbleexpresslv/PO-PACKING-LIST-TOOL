@@ -393,40 +393,42 @@ function parseSlabRow(line) {
 // ============================================================================
 
 function exportToExcel(result) {
-  const rows = [[
-    'PackingList', 'PO', 'Container', 'Supplier', 'Bundle', 'Block',
-    'Slab', 'Length', 'Width', 'Qty', 'Material', 'SupplierRef', 'Unit', 'SQM',
-  ]];
+  const wb = XLSX.utils.book_new();
+
+  // ---- Summary sheet: metadata + bundle index ----
+  const summary = [
+    ['Supplier', result.supplier || ''],
+    ['Packing List', result.packingNr || ''],
+    ['PO Number', result.poNumber || ''],
+    ['Container', result.container || ''],
+    ['Unit', result.unit || ''],
+    [],
+    ['Bundle', 'Material', 'Slabs', 'Total SQM (PDF)', 'Total SQM (calc)'],
+  ];
   for (const b of result.bundles) {
+    const calcSqm = +b.slabs.reduce((s, x) => s + x.sqm, 0).toFixed(2);
+    summary.push([b.number, b.material || '', b.slabs.length, b.totalSqm || '', calcSqm]);
+  }
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+  wsSummary['!cols'] = [{ wch: 16 }, { wch: 36 }, { wch: 8 }, { wch: 16 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // ---- One sheet per bundle: SPS-popup-ready columns ----
+  for (const b of result.bundles) {
+    const rows = [
+      ['Length', 'Width', 'Quantity', 'Block', 'Bundle', 'Supplier Reference'],
+    ];
     for (const s of b.slabs) {
       const block = s.block || result.poNumber || '';
-      rows.push([
-        result.packingNr || '',
-        result.poNumber || '',
-        result.container || '',
-        result.supplier || '',
-        b.number,
-        block,
-        s.slab,
-        s.l,
-        s.h,
-        s.qty,
-        s.material || b.material || '',
-        `${block}-${s.slab}`,
-        result.unit,
-        s.sqm,
-      ]);
+      rows.push([s.l, s.h, s.qty, block, b.number, `${block}-${s.slab}`]);
     }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 16 }];
+    // Sheet name max 31 chars; "BUNDLE " + 5-digit number = 12 chars, well under
+    const sheetName = `BUNDLE ${b.number}`.slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  // Column widths
-  ws['!cols'] = [
-    { wch: 12 }, { wch: 8 }, { wch: 16 }, { wch: 18 }, { wch: 8 },
-    { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 5 },
-    { wch: 32 }, { wch: 14 }, { wch: 5 }, { wch: 8 },
-  ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Slabs');
+
   const safePL = (result.packingNr || 'packing-list').replace(/[^\w]/g, '-');
   const safeSup = (result.supplier || 'supplier').replace(/[^\w]/g, '-');
   XLSX.writeFile(wb, `slabs-${safeSup}-${safePL}.xlsx`);
