@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>Packing List → SPS Slab Info</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #f5f6f8;
@@ -388,6 +389,50 @@ function parseSlabRow(line) {
 }
 
 // ============================================================================
+// EXCEL EXPORT — standardized schema for downstream automation
+// ============================================================================
+
+function exportToExcel(result) {
+  const rows = [[
+    'PackingList', 'PO', 'Container', 'Supplier', 'Bundle', 'Block',
+    'Slab', 'Length', 'Width', 'Qty', 'Material', 'SupplierRef', 'Unit', 'SQM',
+  ]];
+  for (const b of result.bundles) {
+    for (const s of b.slabs) {
+      const block = s.block || result.poNumber || '';
+      rows.push([
+        result.packingNr || '',
+        result.poNumber || '',
+        result.container || '',
+        result.supplier || '',
+        b.number,
+        block,
+        s.slab,
+        s.l,
+        s.h,
+        s.qty,
+        s.material || b.material || '',
+        `${block}-${s.slab}`,
+        result.unit,
+        s.sqm,
+      ]);
+    }
+  }
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  // Column widths
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 8 }, { wch: 16 }, { wch: 18 }, { wch: 8 },
+    { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 5 },
+    { wch: 32 }, { wch: 14 }, { wch: 5 }, { wch: 8 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Slabs');
+  const safePL = (result.packingNr || 'packing-list').replace(/[^\w]/g, '-');
+  const safeSup = (result.supplier || 'supplier').replace(/[^\w]/g, '-');
+  XLSX.writeFile(wb, `slabs-${safeSup}-${safePL}.xlsx`);
+}
+
+// ============================================================================
 // RENDER
 // ============================================================================
 
@@ -406,6 +451,12 @@ function render(result) {
           style="width:100%;font-size:15px;font-weight:700;border:1px solid var(--border);border-radius:4px;padding:4px 6px;margin-top:2px;">
       </div>
     </div>
+    ${result.bundles.length > 0 ? `
+      <div style="margin-bottom:16px;display:flex;gap:8px;">
+        <button id="export-xlsx" style="background:#16a34a;color:white;border:none;padding:10px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">⬇ Export Excel</button>
+        <span style="color:var(--muted);font-size:12px;align-self:center;">Standardized format for downstream automation (future Chrome extension).</span>
+      </div>
+    ` : ''}
   `;
 
   if (result.bundles.length === 0) {
@@ -514,6 +565,12 @@ function render(result) {
         newInput.setSelectionRange(caretPos, caretPos);
       }
     });
+  }
+
+  // Wire Export Excel button
+  const exportBtn = document.getElementById('export-xlsx');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => exportToExcel(result));
   }
 
   // Restore previous progress for this packing list (survives refresh)
