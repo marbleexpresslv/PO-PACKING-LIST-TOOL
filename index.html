@@ -349,7 +349,16 @@ function parseSlabRow(line) {
   //  "1 12499 02 SLABS A POLISHED GEILO 2CM 2,70 1,60 4,32"
   //  "1 - 02 SLABS A POLISHED GEILO MOSAIC DIAMONDS 2CM 3,33 1,91 6,36"
   // Must contain "SLABS" and end with three comma-decimals.
+
+  // pdf.js sometimes renders "3,34" as separate items "3" + "," + "34", or splits
+  // "1,91" into "1,9" + "1". Normalize before tokenizing.
+  // (a) collapse spaces around commas/periods between digits: "3 , 34" -> "3,34"
+  line = line.replace(/(\d)\s*([,.])\s*(\d)/g, '$1$2$3');
+  // (b) re-attach a single trailing digit that got broken off: "1,9 1" -> "1,91"
+  line = line.replace(/(\d+[,.]\d)\s+(\d)(?!\d)/g, '$1$2');
+
   const tokens = line.split(/\s+/);
+
   if (tokens.length < 9) return null;
   if (!/^\d+$/.test(tokens[0])) return null;
 
