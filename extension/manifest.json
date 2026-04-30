@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Invoice Slab Filler",
+  "version": "1.0.0",
+  "description": "Carrega o Excel exportado pelo PO Packing List Tool e gera TSV por bundle para colar na modal Packinglist Details do Stone Profits.",
+  "permissions": ["storage", "clipboardWrite"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Invoice Slab Filler"
+  }
+}

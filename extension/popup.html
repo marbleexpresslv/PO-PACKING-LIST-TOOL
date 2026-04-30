@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Invoice Slab Filler</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      width: 360px;
+      margin: 0;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      color: #111827;
+      background: #ffffff;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    p { margin: 0 0 10px; color: #4b5563; line-height: 1.4; }
+
+    #file { width: 100%; font-size: 12px; }
+
+    #meta {
+      background: #f3f4f6;
+      padding: 8px 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .meta-row b { color: #374151; }
+
+    #unit-warn {
+      background: #fef3c7;
+      border: 1px solid #fbbf24;
+      color: #92400e;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .bundle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      background: #fafafa;
+    }
+    .bundle-info { display: flex; flex-direction: column; gap: 2px; }
+    .bundle-num { font-weight: 600; color: #111827; }
+    .bundle-meta { font-size: 11px; color: #6b7280; }
+
+    .copy-btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .copy-btn:hover { background: #1d4ed8; }
+    .copy-btn.copied { background: #16a34a; }
+
+    #clear {
+      width: 100%;
+      margin-top: 8px;
+      padding: 6px;
+      background: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #4b5563;
+      font-size: 12px;
+    }
+    #clear:hover { background: #e5e7eb; }
+
+    #error {
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin-top: 8px;
+    }
+
+    #bundles-list { max-height: 380px; overflow-y: auto; }
+
+    .hint {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed #e5e7eb;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <h1>📋 Invoice Slab Filler</h1>
+  <div id="root"></div>
+  <script src="lib/xlsx.full.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
