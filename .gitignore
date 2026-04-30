@@ -6,3 +6,4 @@ node_modules/
 
 # Sample PDFs — don't commit real supplier docs
 *.pdf
+.claude/
