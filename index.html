@@ -429,66 +429,72 @@ function parseMineralStone(lines) {
     }
   }
 
-  // Bundle parsing — state machine (Bundle and Block on separate lines)
-  let current = null;
-  let i = 0;
-  while (i < lines.length) {
-    const ln = lines[i];
+  // Find each "Slab Nb." line — that's the column header right before each bundle's slab rows.
+  // Robust because pdf.js may merge the "Bundle"/"Block" labels and values into one or two lines
+  // depending on how the PDF was rendered (stacked vs side-by-side columns).
+  const markers = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^Slab\s*Nb/i.test(lines[i])) markers.push(i);
+  }
 
-    // Inline form: "Bundle 24295" or "Bundle 24295 Block MS103623"
-    const inline = ln.match(/^Bundle\s+(\d{4,6})(?:\s+Block\s+(\S+))?\s*$/i);
-    if (inline) {
-      if (current) result.bundles.push(current);
-      current = { number: inline[1], block: inline[2] || null, slabs: [], material: null, totalSqm: 0 };
-      i++;
-      continue;
-    }
+  for (let m = 0; m < markers.length; m++) {
+    const headerIdx = markers[m];
+    const dataEnd = m + 1 < markers.length ? markers[m + 1] : lines.length;
 
-    // Standalone "Bundle" line — peek ahead for the number
-    if (/^Bundle\s*$/i.test(ln)) {
-      let j = i + 1;
-      while (j < lines.length && !lines[j].trim()) j++;
-      const next = (lines[j] || '').trim();
-      if (/^\d{4,6}$/.test(next)) {
-        if (current) result.bundles.push(current);
-        current = { number: next, block: null, slabs: [], material: null, totalSqm: 0 };
-        // Look for "Block" + value within the next few lines
-        for (let k = j + 1; k < Math.min(j + 6, lines.length); k++) {
-          if (/^Block\s*$/i.test(lines[k])) {
-            const blockVal = (lines[k + 1] || '').trim();
-            if (blockVal && !/^Slab/i.test(blockVal)) current.block = blockVal;
-            break;
-          }
-          // Inline "Block MS103623"
-          const inlineBlock = lines[k].match(/^Block\s+(\S+)/i);
-          if (inlineBlock) { current.block = inlineBlock[1]; break; }
-        }
-        i = j + 1;
+    // Walk backward up to ~8 lines to find Bundle # and Block #
+    let bundleNum = null, blockNum = null;
+    for (let i = headerIdx - 1; i >= Math.max(0, headerIdx - 8); i--) {
+      const ln = lines[i].trim();
+      if (!ln) continue;
+      // Inline: "Bundle 24295" / "Bundle 24295 Block MS103623"
+      const inlineBundle = ln.match(/^Bundle\s+(\d{4,6})(?:\s+Block\s+(\S+))?/i);
+      if (inlineBundle) {
+        bundleNum = bundleNum || inlineBundle[1];
+        blockNum = blockNum || inlineBundle[2] || null;
         continue;
       }
-      // Otherwise (e.g. Pallet/Samples section) — skip the "Bundle" line, don't start a real bundle
-      i++;
-      continue;
+      // Both numbers on one line (side-by-side columns merged): "24295 MS103623"
+      const both = ln.match(/^(\d{4,6})\s+([A-Za-z0-9_]+)\s*$/);
+      if (both && !bundleNum) {
+        bundleNum = both[1];
+        blockNum = blockNum || both[2];
+        continue;
+      }
+      // Just bundle number alone
+      const justBundle = ln.match(/^(\d{4,6})\s*$/);
+      if (justBundle && !bundleNum) {
+        bundleNum = justBundle[1];
+        continue;
+      }
+      // Block on its own line (alphanumeric, not a recognized keyword)
+      if (!blockNum && /^[A-Za-z0-9_]+$/.test(ln) && !/^(bundle|block|slab|material|pallet|qtty|thckns|lng|hgt|tot|weight|kg|polished|leather|notify|order|container|seal|terminal|booking|inter)$/i.test(ln)) {
+        blockNum = ln;
+        continue;
+      }
     }
 
-    // Try to parse as slab row
-    if (current) {
-      const row = parseMineralStoneRow(ln);
+    if (!bundleNum) continue;
+
+    const bundle = { number: bundleNum, block: blockNum, slabs: [], material: null, totalSqm: 0 };
+
+    // Parse slab rows up to the next marker (or end of doc)
+    for (let i = headerIdx + 1; i < dataEnd; i++) {
+      const row = parseMineralStoneRow(lines[i]);
       if (row) {
-        if (!row.block) row.block = current.block;
-        current.slabs.push(row);
-        if (!current.material) current.material = row.material;
+        if (!row.block) row.block = bundle.block;
+        bundle.slabs.push(row);
+        if (!bundle.material) bundle.material = row.material;
       } else {
         // Totals row at end of bundle: "11 68,18 733,86 3.525,000"
-        const tot = ln.match(/^(\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$/);
-        if (tot && current.slabs.length > 0) {
-          current.totalSqm = parseFloat(tot[2].replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+        const tot = lines[i].match(/^(\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$/);
+        if (tot && bundle.slabs.length > 0) {
+          bundle.totalSqm = parseFloat(tot[2].replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
         }
       }
     }
-    i++;
+
+    if (bundle.slabs.length > 0) result.bundles.push(bundle);
   }
-  if (current) result.bundles.push(current);
 
   return result;
 }
