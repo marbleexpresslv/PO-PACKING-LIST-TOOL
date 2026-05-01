@@ -180,6 +180,7 @@
   <label>Supplier:
     <select id="supplier">
       <option value="milanezi">Milanezi Granitos</option>
+      <option value="mineralstone">Mineral Stone Exportação</option>
     </select>
   </label>
   <label>Decimal:
@@ -275,6 +276,7 @@ function groupLines(items) {
 
 const PARSERS = {
   milanezi: parseMilanezi,
+  mineralstone: parseMineralStone,
 };
 
 function parseMilanezi(lines) {
@@ -386,6 +388,143 @@ function parseSlabRow(line) {
   const sqm = parseFloat(tokens[tokens.length - 1].replace(',', '.'));
 
   return { qty: parseInt(qty), block, slab, material, l, h, sqm };
+}
+
+// ----------------------------------------------------------------------------
+// Mineral Stone Exportação
+// ----------------------------------------------------------------------------
+// Layout differs from Milanezi:
+//  - "PACKING LIST Nº 0052/2026" (uses Nº not Nr.)
+//  - "Order Nº 20995"
+//  - Bundle and Block on SEPARATE lines: "Bundle"\n"24295"\n"Block"\n"MS103623"
+//  - Slab rows: SlabNb Material(multi-word) Qty Thickness(2,0cm) Lng Hgt m2 ft2 Weight
+//    e.g. "038 IJEN BLUE / QTZ POLISHED SLAB FIRST QUALITY 1 2,0cm 3,350 1,850 6,198 66,7147 320,450"
+//  - Slab numbers keep leading zeros (038 stays 038)
+//  - Has a Pallet/Samples row at the top (skip — it's not slabs)
+//  - Block is alphanumeric (MS103623)
+
+function parseMineralStone(lines) {
+  const result = {
+    supplier: 'Mineral Stone Exportação',
+    packingNr: null,
+    container: null,
+    poNumber: null,
+    unit: 'm',
+    bundles: [],
+  };
+
+  // Header extraction
+  for (const ln of lines) {
+    if (!result.packingNr) {
+      const m = ln.match(/PACKING LIST\s+N[º°]?\s*([\d/]+)/i);
+      if (m) result.packingNr = m[1];
+    }
+    if (!result.poNumber) {
+      const m = ln.match(/Order\s+N[º°]?\s*(\d{4,6})/i);
+      if (m) result.poNumber = m[1];
+    }
+    if (!result.container) {
+      const m = ln.match(/\b([A-Z]{4}\s?\d{3}\.\d{3}-\d)\b/);
+      if (m) result.container = m[1].replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  // Bundle parsing — state machine (Bundle and Block on separate lines)
+  let current = null;
+  let i = 0;
+  while (i < lines.length) {
+    const ln = lines[i];
+
+    // Inline form: "Bundle 24295" or "Bundle 24295 Block MS103623"
+    const inline = ln.match(/^Bundle\s+(\d{4,6})(?:\s+Block\s+(\S+))?\s*$/i);
+    if (inline) {
+      if (current) result.bundles.push(current);
+      current = { number: inline[1], block: inline[2] || null, slabs: [], material: null, totalSqm: 0 };
+      i++;
+      continue;
+    }
+
+    // Standalone "Bundle" line — peek ahead for the number
+    if (/^Bundle\s*$/i.test(ln)) {
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      const next = (lines[j] || '').trim();
+      if (/^\d{4,6}$/.test(next)) {
+        if (current) result.bundles.push(current);
+        current = { number: next, block: null, slabs: [], material: null, totalSqm: 0 };
+        // Look for "Block" + value within the next few lines
+        for (let k = j + 1; k < Math.min(j + 6, lines.length); k++) {
+          if (/^Block\s*$/i.test(lines[k])) {
+            const blockVal = (lines[k + 1] || '').trim();
+            if (blockVal && !/^Slab/i.test(blockVal)) current.block = blockVal;
+            break;
+          }
+          // Inline "Block MS103623"
+          const inlineBlock = lines[k].match(/^Block\s+(\S+)/i);
+          if (inlineBlock) { current.block = inlineBlock[1]; break; }
+        }
+        i = j + 1;
+        continue;
+      }
+      // Otherwise (e.g. Pallet/Samples section) — skip the "Bundle" line, don't start a real bundle
+      i++;
+      continue;
+    }
+
+    // Try to parse as slab row
+    if (current) {
+      const row = parseMineralStoneRow(ln);
+      if (row) {
+        if (!row.block) row.block = current.block;
+        current.slabs.push(row);
+        if (!current.material) current.material = row.material;
+      } else {
+        // Totals row at end of bundle: "11 68,18 733,86 3.525,000"
+        const tot = ln.match(/^(\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$/);
+        if (tot && current.slabs.length > 0) {
+          current.totalSqm = parseFloat(tot[2].replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+        }
+      }
+    }
+    i++;
+  }
+  if (current) result.bundles.push(current);
+
+  return result;
+}
+
+function parseMineralStoneRow(line) {
+  // Normalize splits (same as Milanezi)
+  line = line.replace(/(\d)\s*([,.])\s*(\d)/g, '$1$2$3');
+  line = line.replace(/(\d+[,.]\d)\s+(\d)(?!\d)/g, '$1$2');
+
+  const tokens = line.split(/\s+/);
+  if (tokens.length < 8) return null;
+
+  // First token: slab number (1-4 digits, may have leading zeros)
+  if (!/^\d{1,4}$/.test(tokens[0])) return null;
+
+  // Find the thickness anchor: "2,0cm", "3cm", "20mm" etc.
+  const thickIdx = tokens.findIndex(t => /^\d+(?:[,.]\d+)?(?:cm|mm)$/i.test(t));
+  if (thickIdx < 2) return null;
+  // Need 5 numerics after thickness: Lng, Hgt, m2, ft2, Weight
+  if (tokens.length < thickIdx + 6) return null;
+
+  const numericRe = /^[\d.,]+$/;
+  for (let k = 1; k <= 5; k++) {
+    if (!numericRe.test(tokens[thickIdx + k])) return null;
+  }
+
+  const slab = tokens[0]; // keep leading zeros — string
+  const qty = parseInt(tokens[thickIdx - 1], 10);
+  if (!Number.isFinite(qty)) return null;
+
+  const material = tokens.slice(1, thickIdx - 1).join(' ');
+  const l = parseFloat(tokens[thickIdx + 1].replace(',', '.'));
+  const h = parseFloat(tokens[thickIdx + 2].replace(',', '.'));
+  const sqm = parseFloat(tokens[thickIdx + 3].replace(',', '.'));
+
+  return { qty, block: null, slab, material, l, h, sqm };
 }
 
 // ============================================================================
